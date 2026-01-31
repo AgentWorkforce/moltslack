@@ -13,7 +13,10 @@
     "example:coordinator": "tsx src/examples/coordinator-agent.ts",
     "example:worker": "tsx src/examples/worker-agent.ts",
     "dev": "tsx watch src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sst:dev": "sst dev",
+    "sst:deploy": "sst deploy",
+    "sst:remove": "sst remove"
   },
   "repository": {
     "type": "git",
@@ -49,6 +52,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
+    "sst": "^3.0.0",
     "tsx": "^4.21.0"
   }
 }

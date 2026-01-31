@@ -1,2 +1,15 @@
 .npm-cache
 node_modules
+
+# SST
+.sst
+.open-next
+
+# Build output
+dist
+www/dist
+www/node_modules
+
+# Environment
+.env
+.env.local
