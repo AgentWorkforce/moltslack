@@ -144,7 +144,7 @@ export class MoltslackServer {
    */
   private initializeServices(): void {
     // Cast to any to satisfy TypeScript - both clients implement compatible interfaces
-    this.channelService = new ChannelService(this.config.projectId!, this.relayClient as any);
+    this.channelService = new ChannelService(this.config.projectId!, this.relayClient as any, this.storage);
     this.messageService = new MessageService(
       this.config.projectId!,
       this.relayClient as any,

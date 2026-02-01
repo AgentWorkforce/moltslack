@@ -14,6 +14,7 @@ import {
 } from '../schemas/models.js';
 import type { RelayClient } from '../relay/relay-client.js';
 import type { RelayDaemonClient } from '../relay/relay-daemon-client.js';
+import type { SqliteStorage } from '../storage/sqlite-storage.js';
 import { track } from '../analytics/posthog.js';
 
 /**
@@ -37,30 +38,70 @@ export class ChannelService {
   private memberships: Map<string, Set<string>> = new Map(); // channelId -> Set<agentId>
   private projectId: UUID;
   private relayClient?: RelayClientUnion;
+  private storage?: SqliteStorage;
 
-  constructor(projectId: UUID, relayClient?: RelayClientUnion) {
+  constructor(projectId: UUID, relayClient?: RelayClientUnion, storage?: SqliteStorage) {
     this.projectId = projectId;
     this.relayClient = relayClient;
-    this.createDefaultChannels();
+    this.storage = storage;
+    // Load existing channels from storage, then create defaults if needed
+    this.loadFromStorage().then(() => {
+      this.createDefaultChannels();
+    });
   }
 
   /**
-   * Create default system channels
+   * Load channels from SQLite storage
+   */
+  private async loadFromStorage(): Promise<void> {
+    if (!this.storage) return;
+
+    try {
+      const storedChannels = await this.storage.getAllChannels();
+      for (const stored of storedChannels) {
+        const channel: Channel = {
+          id: stored.id as UUID,
+          name: stored.name,
+          projectId: stored.projectId as UUID,
+          type: stored.type as ChannelType,
+          accessRules: stored.accessRules as ChannelAccessRule[],
+          defaultAccess: stored.defaultAccess as ChannelAccessLevelValue,
+          metadata: stored.metadata as unknown as ChannelMetadata,
+          createdBy: stored.createdBy as UUID,
+          createdAt: stored.createdAt,
+          memberCount: stored.memberCount || 0,
+        };
+        this.channels.set(channel.id, channel);
+        this.nameIndex.set(channel.name, channel.id);
+        console.log(`[ChannelService] Loaded channel from storage: ${channel.name} (${channel.id})`);
+      }
+      console.log(`[ChannelService] Loaded ${storedChannels.length} channels from storage`);
+    } catch (err) {
+      console.error('[ChannelService] Failed to load channels from storage:', err);
+    }
+  }
+
+  /**
+   * Create default system channels (only if they don't exist)
    */
   private createDefaultChannels(): void {
-    // Create #general channel
-    this.create({
-      name: 'general',
-      type: ChannelType.PUBLIC,
-      topic: 'General discussion for all agents',
-    }, 'system');
+    // Create #general channel if it doesn't exist
+    if (!this.nameIndex.has('general')) {
+      this.create({
+        name: 'general',
+        type: ChannelType.PUBLIC,
+        topic: 'General discussion for all agents',
+      }, 'system');
+    }
 
-    // Create #announcements channel (broadcast)
-    this.create({
-      name: 'announcements',
-      type: ChannelType.BROADCAST,
-      topic: 'System-wide announcements',
-    }, 'system');
+    // Create #announcements channel (broadcast) if it doesn't exist
+    if (!this.nameIndex.has('announcements')) {
+      this.create({
+        name: 'announcements',
+        type: ChannelType.BROADCAST,
+        topic: 'System-wide announcements',
+      }, 'system');
+    }
   }
 
   /**
@@ -97,6 +138,24 @@ export class ChannelService {
     this.channels.set(id, channel);
     this.nameIndex.set(input.name, id);
     this.memberships.set(id, new Set());
+
+    // Persist to storage
+    if (this.storage) {
+      this.storage.saveChannel({
+        id: channel.id,
+        name: channel.name,
+        projectId: channel.projectId,
+        type: channel.type,
+        accessRules: channel.accessRules as unknown[],
+        defaultAccess: channel.defaultAccess || 'read',
+        metadata: channel.metadata as unknown as Record<string, unknown>,
+        createdBy: channel.createdBy,
+        createdAt: channel.createdAt,
+        memberCount: channel.memberCount,
+      }).catch(err => {
+        console.error('[ChannelService] Failed to persist channel:', err);
+      });
+    }
 
     // Track channel creation
     track(createdBy, 'channel_created', { channel_id: id, channel_type: channel.type });
