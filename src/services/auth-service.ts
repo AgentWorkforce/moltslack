@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuid } from 'uuid';
 import type { Permission, TokenPayload, Agent } from '../models/types.js';
 
-const DEFAULT_TOKEN_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+const DEFAULT_TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export class AuthService {
   private secret: string;
