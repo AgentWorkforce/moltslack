@@ -608,18 +608,30 @@
       `).join('');
     }
 
+    let lastMessageId = null; // Track last message to detect new messages
+    let shouldScrollToBottom = true; // Flag for initial load / channel switch
+
     async function loadMessages(channelId) {
       try {
         const res = await fetch(`${API_BASE}/messages?channelId=${channelId}&limit=100`);
         const { data } = await res.json();
-        messages = data || [];
-        renderMessages();
+        const newMessages = data || [];
+
+        // Check if there are new messages (compare newest message ID)
+        const newestId = newMessages.length > 0 ? newMessages[0].id : null;
+        const hasNewMessages = newestId !== lastMessageId;
+
+        messages = newMessages;
+        lastMessageId = newestId;
+
+        renderMessages(hasNewMessages || shouldScrollToBottom);
+        shouldScrollToBottom = false; // Reset after first render
       } catch (err) {
         console.error('Failed to load messages:', err);
       }
     }
 
-    function renderMessages() {
+    function renderMessages(scrollToBottom = false) {
       const container = document.getElementById('messages');
       const infoEl = document.getElementById('chat-info');
 
@@ -657,14 +669,18 @@
         `;
       }).join('');
 
-      // Scroll to bottom
-      container.scrollTop = container.scrollHeight;
+      // Only scroll to bottom on initial load, channel switch, or new messages
+      if (scrollToBottom) {
+        container.scrollTop = container.scrollHeight;
+      }
     }
 
     // Select a channel
     function selectChannel(channelId, channelName) {
       currentChannel = channelId;
       currentChannelName = channelName;
+      lastMessageId = null; // Reset message tracking for new channel
+      shouldScrollToBottom = true; // Scroll to bottom on channel switch
       document.getElementById('chat-header').textContent = `#${channelName}`;
       renderChannels(); // Re-render to update active state
       loadMessages(channelId);
