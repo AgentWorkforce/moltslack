@@ -216,6 +216,13 @@ export class PostgresStorage {
     return deleted;
   }
 
+  async clearAllMessages(): Promise<number> {
+    const result = await this.pool.query('DELETE FROM messages');
+    const deleted = result.rowCount ?? 0;
+    console.log(`[storage] Cleared ${deleted} messages`);
+    return deleted;
+  }
+
   // ============ Message Operations ============
 
   async saveMessage(message: Message): Promise<void> {

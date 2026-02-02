@@ -10,6 +10,7 @@ import type { ChannelService } from '../services/channel-service.js';
 import type { MessageService } from '../services/message-service.js';
 import type { PresenceService } from '../services/presence-service.js';
 import type { AuthService } from '../services/auth-service.js';
+import type { StorageInterface } from '../storage/storage-interface.js';
 import { ChannelAccessLevel, MessageType } from '../schemas/models.js';
 
 // Helper to safely get string from params/query
@@ -22,6 +23,7 @@ interface Services {
   messageService: MessageService;
   presenceService: PresenceService;
   authService: AuthService;
+  storage?: StorageInterface;
 }
 
 // Extend Express Request to include agent info
@@ -39,7 +41,7 @@ declare global {
 
 export function createRoutes(services: Services): Router {
   const router = Router();
-  const { agentService, channelService, messageService, presenceService, authService } = services;
+  const { agentService, channelService, messageService, presenceService, authService, storage } = services;
 
   // Health check
   router.get('/health', (req: Request, res: Response) => {
@@ -63,7 +65,7 @@ export function createRoutes(services: Services): Router {
   // ============================================================================
 
   // Human creates a pending registration
-  router.post('/register', (req: Request, res: Response) => {
+  router.post('/register', async (req: Request, res: Response) => {
     try {
       const { name } = req.body;
 
@@ -74,7 +76,7 @@ export function createRoutes(services: Services): Router {
         });
       }
 
-      const result = agentService.createPendingRegistration(name);
+      const result = await agentService.createPendingRegistration(name);
 
       res.status(201).json({
         success: true,
@@ -94,7 +96,7 @@ export function createRoutes(services: Services): Router {
   });
 
   // Agent claims a pending registration
-  router.post('/agents/claim', (req: Request, res: Response) => {
+  router.post('/agents/claim', async (req: Request, res: Response) => {
     try {
       const { claimToken, capabilities } = req.body;
 
@@ -105,7 +107,7 @@ export function createRoutes(services: Services): Router {
         });
       }
 
-      const agent = agentService.claimRegistration(claimToken, capabilities);
+      const agent = await agentService.claimRegistration(claimToken, capabilities);
 
       res.status(200).json({
         success: true,
@@ -131,7 +133,7 @@ export function createRoutes(services: Services): Router {
   // ============================================================================
 
   // Register a new agent (legacy - direct registration)
-  router.post('/agents', (req: Request, res: Response) => {
+  router.post('/agents', async (req: Request, res: Response) => {
     try {
       const { name, capabilities, metadata } = req.body;
 
@@ -142,7 +144,7 @@ export function createRoutes(services: Services): Router {
         });
       }
 
-      const agent = agentService.register({ name, capabilities, metadata });
+      const agent = await agentService.register({ name, capabilities, metadata });
 
       res.status(201).json({
         success: true,
@@ -549,6 +551,36 @@ export function createRoutes(services: Services): Router {
     presenceService.disconnect(req.agent!.agentId, 'graceful');
 
     res.json({ success: true, data: { disconnected: true } });
+  });
+
+  // ============================================================================
+  // ADMIN ROUTES
+  // ============================================================================
+
+  // Clear all messages (admin - requires secret key)
+  router.post('/admin/clear-messages', async (req: Request, res: Response) => {
+    const adminKey = req.headers['x-admin-key'];
+    const expectedKey = process.env.ADMIN_KEY;
+
+    if (!expectedKey || adminKey !== expectedKey) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Invalid admin key' },
+      });
+    }
+
+    try {
+      const deleted = await storage?.clearAllMessages() ?? 0;
+      res.json({
+        success: true,
+        data: { deleted, message: `Cleared ${deleted} messages` },
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: { code: 'CLEAR_FAILED', message: error.message },
+      });
+    }
   });
 
   return router;

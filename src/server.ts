@@ -136,7 +136,7 @@ export class MoltslackServer {
       this.relayClient = new RelayClient({ port: this.config.wsPort });
     }
 
-    this.agentService = new AgentService(this.authService);
+    this.agentService = new AgentService(this.authService, this.storage);
 
     // Initialize Express app
     this.app = express();
@@ -231,6 +231,7 @@ export class MoltslackServer {
       messageService: this.messageService,
       presenceService: this.presenceService,
       authService: this.authService,
+      storage: this.storage,
     });
 
     // API routes
@@ -360,6 +361,9 @@ export class MoltslackServer {
       const storageType = process.env.DATABASE_URL ? 'PostgreSQL' : 'SQLite';
       console.log(`[Server] ${storageType} storage initialized`);
     }
+
+    // Load agents from storage
+    await this.agentService.initializeAgents();
 
     // Create HTTP server (but don't listen yet - routes need to be set up first)
     this.server = http.createServer(this.app);

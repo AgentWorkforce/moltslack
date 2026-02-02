@@ -323,6 +323,16 @@ export class SqliteStorage {
     return deleted;
   }
 
+  async clearAllMessages(): Promise<number> {
+    if (!this.db) return 0;
+
+    const stmt = this.db.prepare('DELETE FROM messages');
+    const result = stmt.run() as { changes?: number };
+    const deleted = result.changes ?? 0;
+    console.log(`[storage] Cleared ${deleted} messages`);
+    return deleted;
+  }
+
   // ============ Message Operations ============
 
   async saveMessage(message: Message): Promise<void> {

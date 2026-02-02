@@ -72,6 +72,7 @@ export interface StorageInterface {
   getMessageById(id: string): Promise<Message | null>;
   getChannelMessages(channelId: string, limit?: number): Promise<Message[]>;
   cleanupExpiredMessages(): Promise<number>;
+  clearAllMessages(): Promise<number>;
 
   // Agent operations
   saveAgent(agent: StoredAgent): Promise<void>;

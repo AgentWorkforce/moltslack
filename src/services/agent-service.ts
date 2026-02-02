@@ -13,6 +13,7 @@ import type {
 } from '../models/types.js';
 import { AuthService } from './auth-service.js';
 import { track } from '../analytics/posthog.js';
+import type { StorageInterface } from '../storage/storage-interface.js';
 
 /** Generate a random claim token */
 function generateClaimToken(): string {
@@ -24,15 +25,77 @@ export class AgentService {
   private nameIndex: Map<string, string> = new Map(); // name -> id
   private claimTokenIndex: Map<string, string> = new Map(); // claimToken -> id
   private authService: AuthService;
+  private storage?: StorageInterface;
 
-  constructor(authService: AuthService) {
+  constructor(authService: AuthService, storage?: StorageInterface) {
     this.authService = authService;
+    this.storage = storage;
+  }
+
+  /**
+   * Initialize agents from storage
+   */
+  async initializeAgents(): Promise<void> {
+    if (!this.storage) return;
+
+    try {
+      const storedAgents = await this.storage.getAllAgents();
+      for (const stored of storedAgents) {
+        const agent: Agent = {
+          id: stored.id,
+          name: stored.name,
+          token: stored.token || '',
+          capabilities: stored.capabilities || [],
+          permissions: (stored.permissions as Permission[]) || this.authService.createDefaultPermissions(),
+          status: 'offline', // Always start offline, let them reconnect
+          metadata: stored.metadata || {},
+          createdAt: stored.createdAt,
+          lastSeenAt: stored.lastSeenAt || stored.createdAt,
+          claimToken: stored.claimToken,
+          registrationStatus: stored.registrationStatus as RegistrationStatus || 'claimed',
+        };
+
+        this.agents.set(agent.id, agent);
+        this.nameIndex.set(agent.name, agent.id);
+        if (agent.claimToken) {
+          this.claimTokenIndex.set(agent.claimToken, agent.id);
+        }
+      }
+      console.log(`[AgentService] Loaded ${storedAgents.length} agents from storage`);
+    } catch (err) {
+      console.error('[AgentService] Failed to load agents from storage:', err);
+    }
+  }
+
+  /**
+   * Save agent to storage
+   */
+  private async saveToStorage(agent: Agent): Promise<void> {
+    if (!this.storage) return;
+
+    try {
+      await this.storage.saveAgent({
+        id: agent.id,
+        name: agent.name,
+        capabilities: agent.capabilities,
+        permissions: agent.permissions as { resource: string; actions: string[] }[],
+        status: agent.status,
+        metadata: agent.metadata,
+        lastSeenAt: agent.lastSeenAt,
+        createdAt: agent.createdAt,
+        token: agent.token,
+        claimToken: agent.claimToken,
+        registrationStatus: agent.registrationStatus,
+      });
+    } catch (err) {
+      console.error('[AgentService] Failed to save agent to storage:', err);
+    }
   }
 
   /**
    * Register a new agent (direct registration - legacy)
    */
-  register(registration: AgentRegistration): Agent {
+  async register(registration: AgentRegistration): Promise<Agent> {
     // Check for duplicate name
     if (this.nameIndex.has(registration.name)) {
       throw new Error(`Agent with name "${registration.name}" already exists`);
@@ -61,6 +124,9 @@ export class AgentService {
     this.agents.set(id, agent);
     this.nameIndex.set(registration.name, id);
 
+    // Persist to storage
+    await this.saveToStorage(agent);
+
     // Track registration
     track(id, 'agent_registered', { agent_id: id, agent_name: agent.name });
 
@@ -72,7 +138,7 @@ export class AgentService {
    * Create a pending registration (human-initiated)
    * Returns a claim token that must be used by the agent to complete registration
    */
-  createPendingRegistration(name: string): { id: string; name: string; claimToken: string } {
+  async createPendingRegistration(name: string): Promise<{ id: string; name: string; claimToken: string }> {
     // Check for duplicate name
     if (this.nameIndex.has(name)) {
       throw new Error(`Agent with name "${name}" already exists`);
@@ -101,6 +167,9 @@ export class AgentService {
     this.nameIndex.set(name, id);
     this.claimTokenIndex.set(claimToken, id);
 
+    // Persist to storage
+    await this.saveToStorage(agent);
+
     console.log(`[AgentService] Created pending registration: ${name} (${id})`);
     return { id, name, claimToken };
   }
@@ -109,8 +178,37 @@ export class AgentService {
    * Claim a pending registration (agent-initiated)
    * Agent provides the claim token to complete registration and receive auth token
    */
-  claimRegistration(claimToken: string, capabilities?: string[]): Agent {
-    const id = this.claimTokenIndex.get(claimToken);
+  async claimRegistration(claimToken: string, capabilities?: string[]): Promise<Agent> {
+    // First check in-memory index
+    let id = this.claimTokenIndex.get(claimToken);
+
+    // If not in memory, try loading from storage (another replica may have created it)
+    if (!id && this.storage) {
+      const storedAgent = await this.storage.getAgentByClaimToken(claimToken);
+      if (storedAgent) {
+        // Load into memory
+        const agent: Agent = {
+          id: storedAgent.id,
+          name: storedAgent.name,
+          token: storedAgent.token || '',
+          capabilities: storedAgent.capabilities || [],
+          permissions: (storedAgent.permissions as Permission[]) || this.authService.createDefaultPermissions(),
+          status: 'offline',
+          metadata: storedAgent.metadata || {},
+          createdAt: storedAgent.createdAt,
+          lastSeenAt: storedAgent.lastSeenAt || storedAgent.createdAt,
+          claimToken: storedAgent.claimToken,
+          registrationStatus: storedAgent.registrationStatus as RegistrationStatus || 'pending',
+        };
+        this.agents.set(agent.id, agent);
+        this.nameIndex.set(agent.name, agent.id);
+        if (agent.claimToken) {
+          this.claimTokenIndex.set(agent.claimToken, agent.id);
+        }
+        id = agent.id;
+      }
+    }
+
     if (!id) {
       throw new Error('Invalid or expired claim token');
     }
@@ -132,6 +230,9 @@ export class AgentService {
 
     // Remove from claim token index
     this.claimTokenIndex.delete(claimToken);
+
+    // Persist to storage
+    await this.saveToStorage(agent);
 
     // Track registration
     track(id, 'agent_claimed', { agent_id: id, agent_name: agent.name });
