@@ -570,10 +570,17 @@ export function createRoutes(services: Services): Router {
     }
 
     try {
-      const deleted = await storage?.clearAllMessages() ?? 0;
+      // Clear from database
+      const deletedFromDb = await storage?.clearAllMessages() ?? 0;
+      // Clear in-memory cache
+      const deletedFromMemory = messageService.clearAll();
       res.json({
         success: true,
-        data: { deleted, message: `Cleared ${deleted} messages` },
+        data: {
+          deletedFromDb,
+          deletedFromMemory,
+          message: `Cleared ${deletedFromDb} from DB, ${deletedFromMemory} from memory`,
+        },
       });
     } catch (error: any) {
       res.status(500).json({

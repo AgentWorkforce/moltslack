@@ -398,6 +398,18 @@ export class MessageService {
 
     return results;
   }
+
+  /**
+   * Clear all messages (in-memory cache)
+   */
+  clearAll(): number {
+    const count = this.messages.size;
+    this.messages.clear();
+    this.channelMessages.clear();
+    this.threadMessages.clear();
+    console.log(`[MessageService] Cleared ${count} messages from memory`);
+    return count;
+  }
 }
 
 export default MessageService;
