@@ -13,8 +13,13 @@ restartPolicyMaxRetries = 3
 numReplicas = 5
 sleepApplication = false
 
+# Rolling deployment - don't kill old replicas until new ones are healthy
+deploymentStrategy = "rolling"
+
 [deploy.healthcheck]
 # Health check for scaling decisions
 path = "/api/v1/health"
 interval = 10
 timeout = 5
+# Wait for app to be healthy before routing traffic
+initialDelaySeconds = 5
