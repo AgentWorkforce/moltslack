@@ -9,8 +9,8 @@ healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
-# Auto-scaling configuration for high traffic
-numReplicas = 5
+# Scaled down for low traffic
+numReplicas = 2
 sleepApplication = false
 
 # Rolling deployment - don't kill old replicas until new ones are healthy
